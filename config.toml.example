@@ -1,0 +1,81 @@
+# ============================================================
+# OpenNexus Configuration — config.toml.example
+# Copy to ~/.opennexus/config.toml and fill in your values.
+# ============================================================
+
+# Telegram bot token from @BotFather
+bot_token = ""
+
+# Default system prompt (override per-session with /system set)
+# system_prompt = "You are OpenNexus, an AI assistant built for developers and ethical hackers."
+
+# ============================================================
+# ACCESS CONTROL
+# ============================================================
+[access]
+# Your Telegram user ID — has full admin control (/adduser, /removeuser)
+owner_id = 0
+
+# List of Telegram user IDs allowed to use the bot
+# The owner is automatically included even if not listed here
+allowed_users = []
+
+# ============================================================
+# AI PROVIDERS
+# ============================================================
+[providers]
+# Default provider to use. Options: anthropic, openai, openrouter, groq, ollama, custom
+default = "openrouter"
+
+[providers.anthropic]
+api_key = ""
+default_model = "claude-opus-4-5"
+# base_url = "https://api.anthropic.com/v1"   # rarely needs changing
+
+[providers.openai]
+api_key = ""
+default_model = "gpt-4o"
+# base_url = "https://api.openai.com/v1"
+
+[providers.openrouter]
+api_key = ""
+default_model = "anthropic/claude-opus-4-5"
+# base_url = "https://openrouter.ai/api/v1"
+
+[providers.groq]
+api_key = ""
+default_model = "llama-3.3-70b-versatile"
+# base_url = "https://api.groq.com/openai/v1"
+
+[providers.ollama]
+base_url = "http://localhost:11434/v1"
+default_model = "llama3"
+# No API key needed for local Ollama
+
+[providers.custom]
+base_url = ""
+api_key = ""
+auth_header = "Authorization"
+auth_prefix = "Bearer"
+default_model = ""
+
+# ============================================================
+# SECURITY
+# ============================================================
+[security]
+# Shell commands allowed for execution
+allowed_commands = [
+    "ls", "dir", "cat", "type", "echo", "pwd", "whoami", "id",
+    "ping", "nslookup", "dig", "curl", "wget", "nmap", "python",
+    "python3", "pip", "git", "grep", "find", "head", "tail",
+    "wc", "sort", "uniq", "awk", "sed", "jq", "file", "strings",
+    "hexdump", "xxd", "base64", "openssl", "ssh", "scp",
+    "docker", "kubectl", "terraform",
+]
+
+# Patterns that trigger destructive command confirmation
+destructive_patterns = [
+    "rm ", "rm -", "rmdir", "del ", "format ", "dd ",
+    "chmod 777", "mkfs", "> /dev/", ":(){ :|:", "shutdown",
+    "reboot", "halt", "init 0", "init 6",
+]
