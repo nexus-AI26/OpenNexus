@@ -11,12 +11,12 @@ set -euo pipefail
 
 REPO_URL="https://github.com/nexus-AI26/OpenNexus.git"
 INSTALL_DIR="/opt/opennexus"
-CONFIG_DIR="$HOME/.opennexus"
+CONFIG_DIR="$INSTALL_DIR/.opennexus"
 SERVICE_FILE="/etc/systemd/system/opennexus.service"
 SERVICE_USER="opennexus"
 PYTHON_MIN_MAJOR=3
 PYTHON_MIN_MINOR=11
-INSTALL_SERVICE=false
+INSTALL_SERVICE=true
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -35,13 +35,13 @@ log_step()    { echo -e "\n${BOLD}══ $* ${RESET}"; }
 # ── Parse args ───────────────────────────────────────────────────────────────
 for arg in "$@"; do
     case "$arg" in
-        --service) 
-            INSTALL_SERVICE=true 
-            CONFIG_DIR="$INSTALL_DIR/.opennexus"
+        --no-service) 
+            INSTALL_SERVICE=false 
+            CONFIG_DIR="$HOME/.opennexus"
             ;;
         --help|-h)
-            echo "Usage: bash install.sh [--service]"
-            echo "  --service   Install and enable systemd service (requires root)"
+            echo "Usage: bash install.sh [--no-service]"
+            echo "  --no-service   Skip installing the systemd service and run locally"
             exit 0
             ;;
     esac
@@ -61,9 +61,10 @@ echo -e "  ${BOLD}AI assistant for developers and ethical hackers${RESET}"
 echo -e "  github.com/nexus-AI26/OpenNexus"
 echo ""
 
-# ── Root check (for --service) ───────────────────────────────────────────────
+# ── Root check (for service) ───────────────────────────────────────────────
 if $INSTALL_SERVICE && [[ $EUID -ne 0 ]]; then
-    log_error "--service flag requires root. Run: sudo bash install.sh --service"
+    log_error "Installing the service requires root. Run: sudo bash install.sh"
+    log_warn "Or run locally without a service: bash install.sh --no-service"
     exit 1
 fi
 
