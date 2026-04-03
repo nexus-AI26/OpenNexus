@@ -326,11 +326,11 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await _execute_shell_and_reply(update, command)
 
-async def _execute_shell_and_reply(update: Update, command: str) -> str:
+async def _execute_shell_and_reply(update: Update, command: str, bypass_allowlist: bool = False) -> str:
     config = _get_config()
     user_id = update.effective_user.id  # type: ignore[union-attr]
     
-    if not is_command_allowed(command, config.allowed_commands):
+    if not bypass_allowlist and not is_command_allowed(command, config.allowed_commands):
         if update.message:
             await update.message.reply_text("Command not in allowlist.")
         return ""
@@ -555,7 +555,7 @@ async def _process_message(
             shell_command = "netstat -ano" if "win" in __import__("sys").platform else "netstat -tuln"
             
     if shell_command:
-        output = await _execute_shell_and_reply(update, shell_command)
+        output = await _execute_shell_and_reply(update, shell_command, bypass_allowlist=True)
         if output:
             user_contexts[user_id].append({"role": "system", "content": f"[SYSTEM COMMAND EXECUTION RESULT: {shell_command}]\n{output}"})
 
