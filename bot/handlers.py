@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import time
+import re
 from typing import Any
 
 from telegram import Update, constants
@@ -14,13 +15,15 @@ from telegram.ext import (
     filters,
 )
 
-from config import Config, SKILLS_DIR
+from config import Config, SKILLS_DIR, LOGS_DIR
 from bot.formatter import format_response, split_message
 from bot.middleware import create_access_checker, create_sanitize_middleware
 from providers import get_provider
 from providers.base import BaseProvider
 from skills.manager import SkillManager
 from skills.generator import SkillGenerator
+from security.sanitizer import is_command_allowed, is_destructive, log_exec
+from tools.search import web_search
 
 logger = logging.getLogger("opennexus.bot.handlers")
 
@@ -28,6 +31,7 @@ user_contexts: dict[int, list[dict[str, str]]] = {}
 user_providers: dict[int, tuple[str, str]] = {}
 user_system_prompts: dict[int, str] = {}
 user_raw_mode: dict[int, bool] = {}
+user_websearch_enabled: dict[int, bool] = {}
 
 _config: Config | None = None
 _skill_manager: SkillManager | None = None
@@ -258,6 +262,122 @@ async def cmd_raw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
         await update.message.reply_text(f"Raw mode: {state}")
 
+async def cmd_websearch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check(update, context):
+        return
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    args = context.args or []
+    if not args:
+        state = "ON" if user_websearch_enabled.get(user_id, True) else "OFF"
+        if update.message:
+            await update.message.reply_text(f"Auto-websearch is currently {state}.")
+        return
+
+    val = args[0].lower()
+    if val in ("on", "true", "yes"):
+        user_websearch_enabled[user_id] = True
+    elif val in ("off", "false", "no"):
+        user_websearch_enabled[user_id] = False
+        
+    state = "ON" if user_websearch_enabled.get(user_id, True) else "OFF"
+    if update.message:
+        await update.message.reply_text(f"Auto-websearch is now {state}.")
+
+async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check(update, context):
+        return
+    query = " ".join(context.args or [])
+    if not query:
+        if update.message:
+            await update.message.reply_text("Usage: /search <query>")
+        return
+    
+    if update.message:
+        msg = await update.message.reply_text(f"Searching web for '{query}'...")
+        results = await web_search(query)
+        if not results:
+            await msg.edit_text("No results found.")
+            return
+        
+        lines = []
+        for i, r in enumerate(results, 1):
+            title = r['title'].replace("`", "")
+            url = r['url'].replace("`", "")
+            snippet = r['snippet'].replace("`", "")
+            lines.append(f"{i}. {title} | {url}\n{snippet}")
+        text = "```\n" + "\n\n".join(lines) + "\n```"
+        await msg.edit_text(text, parse_mode="MarkdownV2")
+
+async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check(update, context):
+        return
+    config = _get_config()
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    if user_id != config.owner_id:
+        if update.message:
+            await update.message.reply_text("Access denied. Owner only.")
+        return
+    
+    command = " ".join(context.args or [])
+    if not command:
+        if update.message:
+            await update.message.reply_text("Usage: /run <shell command>")
+        return
+
+    await _execute_shell_and_reply(update, command)
+
+async def _execute_shell_and_reply(update: Update, command: str) -> str:
+    config = _get_config()
+    user_id = update.effective_user.id  # type: ignore[union-attr]
+    
+    if not is_command_allowed(command, config.allowed_commands):
+        if update.message:
+            await update.message.reply_text("Command not in allowlist.")
+        return ""
+    if is_destructive(command, config.destructive_patterns):
+        if update.message:
+            await update.message.reply_text("Destructive command pattern detected and blocked.")
+        return ""
+
+    log_exec(command, user_id, str(LOGS_DIR / "exec.log"))
+    
+    msg = None
+    if update.message:
+        msg = await update.message.reply_text("Executing...")
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
+        
+        out = stdout.decode('utf-8', errors='replace').strip()
+        err = stderr.decode('utf-8', errors='replace').strip()
+        result = ""
+        if out: result += out + "\n"
+        if err: result += err + "\n"
+        if not result: result = "(no output)"
+        
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except:
+            pass
+        result = "Command timed out after 10 seconds."
+    except Exception as e:
+        result = f"Error executing command: {e}"
+
+    if msg:
+        try:
+            res_md = result.replace("`", "'")[:3900]
+            await msg.edit_text(f"```text\n$ {command}\n{res_md}\n```", parse_mode="MarkdownV2")
+        except Exception:
+            pass
+    
+    return result
+
 
 async def cmd_adduser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
@@ -421,6 +541,43 @@ async def _process_message(
     if not any(m["content"] == text and m["role"] == "user" for m in user_contexts[user_id][-1:]):
         user_contexts[user_id].append({"role": "user", "content": text})
 
+    # NLP Shell command extraction
+    shell_command = None
+    t_lower = text.lower()
+    if user_id == _get_config().owner_id:
+        if "check my ip" in t_lower or "what is my ip" in t_lower or "what's my ip" in t_lower:
+            shell_command = "ipconfig" if "win" in __import__("sys").platform else "ip a || ifconfig"
+        elif "show running processes" in t_lower or "list processes" in t_lower:
+            shell_command = "tasklist" if "win" in __import__("sys").platform else "ps aux"
+        elif "what is my hostname" in t_lower or "what's my hostname" in t_lower:
+            shell_command = "hostname"
+        elif "check open ports" in t_lower:
+            shell_command = "netstat -ano" if "win" in __import__("sys").platform else "netstat -tuln"
+            
+    if shell_command:
+        output = await _execute_shell_and_reply(update, shell_command)
+        if output:
+            user_contexts[user_id].append({"role": "system", "content": f"[SYSTEM COMMAND EXECUTION RESULT: {shell_command}]\n{output}"})
+
+    # NLP Web Search matching
+    search_keywords = ["search for ", "look up ", "find ", "what is ", "latest ", "current ", "news about "]
+    if user_websearch_enabled.get(user_id, True) and any(sk in t_lower for sk in search_keywords):
+        query = text
+        for sk in search_keywords:
+            if sk in t_lower:
+                idx = t_lower.find(sk) + len(sk)
+                query = text[idx:].strip()
+                break
+        if len(query) > 2:
+            results = await web_search(query)
+            if results:
+                res_lines = [f"[WEB SEARCH RESULTS for \"{query}\"]"]
+                for i, r in enumerate(results, 1):
+                    res_lines.append(f"{i}. Title: {r['title']} | URL: {r['url']} | Snippet: {r['snippet']}")
+                res_lines.append("[END RESULTS]")
+                sys_note = "\n".join(res_lines)
+                user_contexts[user_id].append({"role": "system", "content": sys_note})
+
     skill_injection = _skill_manager.build_skill_injection(text)
     system_prompt = _get_system_prompt(user_id)
     if skill_injection:
@@ -522,6 +679,9 @@ def setup_bot(config: Config) -> Application:
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("skills", cmd_skills))
     app.add_handler(CommandHandler("skill", cmd_skill))
+    app.add_handler(CommandHandler("search", cmd_search))
+    app.add_handler(CommandHandler("websearch", cmd_websearch))
+    app.add_handler(CommandHandler("run", cmd_run))
     app.add_handler(CommandHandler("export", cmd_export))
     app.add_handler(CommandHandler("system", cmd_system))
     app.add_handler(CommandHandler("tokens", cmd_tokens))
