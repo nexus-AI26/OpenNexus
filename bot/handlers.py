@@ -262,6 +262,7 @@ async def cmd_raw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
         await update.message.reply_text(f"Raw mode: {state}")
 
+
 async def cmd_websearch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
@@ -278,10 +279,11 @@ async def cmd_websearch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         user_websearch_enabled[user_id] = True
     elif val in ("off", "false", "no"):
         user_websearch_enabled[user_id] = False
-        
+
     state = "ON" if user_websearch_enabled.get(user_id, True) else "OFF"
     if update.message:
         await update.message.reply_text(f"Auto-websearch is now {state}.")
+
 
 async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
@@ -291,14 +293,14 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if update.message:
             await update.message.reply_text("Usage: /search <query>")
         return
-    
+
     if update.message:
         msg = await update.message.reply_text(f"Searching web for '{query}'...")
         results = await web_search(query)
         if not results:
             await msg.edit_text("No results found.")
             return
-        
+
         lines = []
         for i, r in enumerate(results, 1):
             title = r['title'].replace("`", "")
@@ -307,6 +309,7 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             lines.append(f"{i}. {title} | {url}\n{snippet}")
         text = "```\n" + "\n\n".join(lines) + "\n```"
         await msg.edit_text(text, parse_mode="MarkdownV2")
+
 
 async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
@@ -317,7 +320,7 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if update.message:
             await update.message.reply_text("Access denied. Owner only.")
         return
-    
+
     command = " ".join(context.args or [])
     if not command:
         if update.message:
@@ -326,10 +329,11 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await _execute_shell_and_reply(update, command)
 
+
 async def _execute_shell_and_reply(update: Update, command: str, bypass_allowlist: bool = False) -> str:
     config = _get_config()
     user_id = update.effective_user.id  # type: ignore[union-attr]
-    
+
     if not bypass_allowlist and not is_command_allowed(command, config.allowed_commands):
         if update.message:
             await update.message.reply_text("Command not in allowlist.")
@@ -340,10 +344,10 @@ async def _execute_shell_and_reply(update: Update, command: str, bypass_allowlis
         return ""
 
     log_exec(command, user_id, str(LOGS_DIR / "exec.log"))
-    
+
     msg = None
     if update.message:
-        msg = await update.message.reply_text("Executing...")
+        msg = await update.message.reply_text("⚙️ Executing...")
 
     try:
         proc = await asyncio.create_subprocess_shell(
@@ -352,18 +356,18 @@ async def _execute_shell_and_reply(update: Update, command: str, bypass_allowlis
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
-        
+
         out = stdout.decode('utf-8', errors='replace').strip()
         err = stderr.decode('utf-8', errors='replace').strip()
         result = ""
         if out: result += out + "\n"
         if err: result += err + "\n"
         if not result: result = "(no output)"
-        
+
     except asyncio.TimeoutError:
         try:
             proc.kill()
-        except:
+        except Exception:
             pass
         result = "Command timed out after 10 seconds."
     except Exception as e:
@@ -375,7 +379,7 @@ async def _execute_shell_and_reply(update: Update, command: str, bypass_allowlis
             await msg.edit_text(f"```text\n$ {command}\n{res_md}\n```", parse_mode="MarkdownV2")
         except Exception:
             pass
-    
+
     return result
 
 
@@ -542,24 +546,24 @@ async def _process_message(
         user_contexts[user_id].append({"role": "user", "content": text})
 
     skill_injection = _skill_manager.build_skill_injection(text)
-    
-    # Base system prompt with autonomous execution instructions
+
     base_prompt = _get_system_prompt(user_id)
     system_prompt = (
-        base_prompt + 
+        base_prompt +
         "\n\nIf you need to execute a shell command to fulfill the request, output exactly `<execute>the command</execute>`. "
         "Wait for the system result before continuing. DO NOT hallucinate command outputs."
     )
-    
+
     if skill_injection:
         system_prompt += skill_injection
 
     provider, model = _get_provider_for_user(user_id)
 
     assert update.message is not None
-    
+
     max_turns = 5
     for turn in range(max_turns):
+        # Send typing action before starting
         await context.bot.send_chat_action(
             chat_id=update.message.chat_id,
             action=constants.ChatAction.TYPING,
@@ -567,9 +571,10 @@ async def _process_message(
 
         try:
             full_response = ""
-            sent_message = await update.message.reply_text("▫️")
-            last_edit_time = time.time()
-            token_count = 0
+            sent_message = None          # don't send placeholder until first chunk
+            last_edit_time = 0.0
+            chunk_count = 0
+            typing_refresh = 0
 
             async for chunk in provider.complete(
                 messages=user_contexts[user_id],
@@ -578,33 +583,66 @@ async def _process_message(
                 stream=True,
             ):
                 full_response += chunk
-                token_count += 1
+                chunk_count += 1
+                typing_refresh += 1
 
-                now = time.time()
-                should_update = (
-                    (now - last_edit_time >= 1.0) or
-                    (token_count >= 20 and now - last_edit_time >= 0.5)
-                )
-
-                if should_update and full_response.strip():
-                    display = full_response + " ▫️"
+                # Refresh typing indicator every 25 chunks so it doesn't expire
+                if typing_refresh >= 25:
+                    typing_refresh = 0
                     try:
-                        await sent_message.edit_text(display)
-                        last_edit_time = now
-                        token_count = 0
+                        await context.bot.send_chat_action(
+                            chat_id=update.message.chat_id,
+                            action=constants.ChatAction.TYPING,
+                        )
                     except Exception:
                         pass
 
+                now = time.time()
+
+                # First chunk: send the initial message immediately
+                if sent_message is None and full_response.strip():
+                    try:
+                        sent_message = await update.message.reply_text(
+                            full_response + " ⬜"
+                        )
+                        last_edit_time = now
+                    except Exception:
+                        pass
+                    continue
+
+                # Subsequent chunks: edit every 0.5s or every 15 chunks
+                should_update = (
+                    sent_message is not None and
+                    full_response.strip() and
+                    ((now - last_edit_time >= 0.5) or (chunk_count >= 15))
+                )
+
+                if should_update:
+                    try:
+                        await sent_message.edit_text(full_response + " ⬜")
+                        last_edit_time = now
+                        chunk_count = 0
+                    except Exception:
+                        pass
+
+            # Streaming done — send final clean message
             if full_response.strip():
                 chunks = split_message(full_response)
-                try:
-                    await sent_message.edit_text(chunks[0])
-                except Exception:
-                    pass
+                if sent_message:
+                    try:
+                        await sent_message.edit_text(chunks[0])
+                    except Exception:
+                        pass
+                else:
+                    # No message was sent yet (very short response)
+                    sent_message = await update.message.reply_text(chunks[0])
                 for extra in chunks[1:]:
                     await update.message.reply_text(extra)
             else:
-                await sent_message.edit_text("(empty response)")
+                if sent_message:
+                    await sent_message.edit_text("(empty response)")
+                else:
+                    await update.message.reply_text("(empty response)")
 
             user_contexts[user_id].append({
                 "role": "assistant",
@@ -616,17 +654,14 @@ async def _process_message(
             if match and user_id == _get_config().owner_id:
                 cmd = match.group(1).strip()
                 await update.message.reply_text(f"🛠 *Executing:* `{cmd}`", parse_mode="MarkdownV2")
-                
+
                 output = await _execute_shell_and_reply(update, cmd, bypass_allowlist=True)
                 sys_msg = f"[SYSTEM COMMAND EXECUTION RESULT: {cmd}]\n{output}"
                 user_contexts[user_id].append({"role": "system", "content": sys_msg})
-                
-                # Feedback on result
+
                 if not output:
-                    await update.message.reply_text("_Command produced no output or error_", parse_mode="MarkdownV2")
-                # Loop continues to let AI respond to the result
+                    await update.message.reply_text("_Command produced no output_", parse_mode="MarkdownV2")
             else:
-                # No execution or not authorized, we are done
                 break
 
         except Exception as e:
