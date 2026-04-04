@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenNexus Web</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="logo">OpenNexus</div>
+            <div class="status">● Online</div>
+        </header>
+        <div class="chat-container">
+            <div class="chat-history" id="chat-history">
+                <div class="message system-msg">
+                    Welcome to OpenNexus Terminal. Type a command or question to begin.
+                </div>
+            </div>
+            <div class="input-container">
+                <input type="text" id="chat-input" placeholder="Type a message or system command..." autocomplete="off">
+                <button id="send-btn">Send</button>
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -541,129 +541,110 @@ async def _process_message(
     if not any(m["content"] == text and m["role"] == "user" for m in user_contexts[user_id][-1:]):
         user_contexts[user_id].append({"role": "user", "content": text})
 
-    # NLP Shell command extraction
-    shell_command = None
-    t_lower = text.lower()
-    if user_id == _get_config().owner_id:
-        if "check my ip" in t_lower or "what is my ip" in t_lower or "what's my ip" in t_lower:
-            shell_command = "ipconfig" if "win" in __import__("sys").platform else "ip a || ifconfig"
-        elif "show running processes" in t_lower or "list processes" in t_lower:
-            shell_command = "tasklist" if "win" in __import__("sys").platform else "ps aux"
-        elif "what is my hostname" in t_lower or "what's my hostname" in t_lower:
-            shell_command = "hostname"
-        elif "check open ports" in t_lower:
-            shell_command = "netstat -ano" if "win" in __import__("sys").platform else "netstat -tuln"
-            
-    if shell_command:
-        output = await _execute_shell_and_reply(update, shell_command, bypass_allowlist=True)
-        if output:
-            user_contexts[user_id].append({"role": "system", "content": f"[SYSTEM COMMAND EXECUTION RESULT: {shell_command}]\n{output}"})
-
-    # NLP Web Search matching
-    search_keywords = ["search for ", "look up ", "find ", "what is ", "latest ", "current ", "news about "]
-    if user_websearch_enabled.get(user_id, True) and any(sk in t_lower for sk in search_keywords):
-        query = text
-        for sk in search_keywords:
-            if sk in t_lower:
-                idx = t_lower.find(sk) + len(sk)
-                query = text[idx:].strip()
-                break
-        if len(query) > 2:
-            results = await web_search(query)
-            if results:
-                res_lines = [f"[WEB SEARCH RESULTS for \"{query}\"]"]
-                for i, r in enumerate(results, 1):
-                    res_lines.append(f"{i}. Title: {r['title']} | URL: {r['url']} | Snippet: {r['snippet']}")
-                res_lines.append("[END RESULTS]")
-                sys_note = "\n".join(res_lines)
-                user_contexts[user_id].append({"role": "system", "content": sys_note})
-
     skill_injection = _skill_manager.build_skill_injection(text)
-    system_prompt = _get_system_prompt(user_id)
+    
+    # Base system prompt with autonomous execution instructions
+    base_prompt = _get_system_prompt(user_id)
+    system_prompt = (
+        base_prompt + 
+        "\n\nIf you need to execute a shell command to fulfill the request, output exactly `<execute>the command</execute>`. "
+        "Wait for the system result before continuing. DO NOT hallucinate command outputs."
+    )
+    
     if skill_injection:
         system_prompt += skill_injection
 
     provider, model = _get_provider_for_user(user_id)
 
     assert update.message is not None
-    await context.bot.send_chat_action(
-        chat_id=update.message.chat_id,
-        action=constants.ChatAction.TYPING,
-    )
+    
+    max_turns = 5
+    for turn in range(max_turns):
+        await context.bot.send_chat_action(
+            chat_id=update.message.chat_id,
+            action=constants.ChatAction.TYPING,
+        )
 
-    try:
-        full_response = ""
-        sent_message = await update.message.reply_text("▫️")
-        last_edit_time = time.time()
-        token_buffer = ""
-        token_count = 0
+        try:
+            full_response = ""
+            sent_message = await update.message.reply_text("▫️")
+            last_edit_time = time.time()
+            token_count = 0
 
-        async for chunk in provider.complete(
-            messages=user_contexts[user_id],
-            model=model,
-            system=system_prompt,
-            stream=True,
-        ):
-            full_response += chunk
-            token_buffer += chunk
-            token_count += 1
+            async for chunk in provider.complete(
+                messages=user_contexts[user_id],
+                model=model,
+                system=system_prompt,
+                stream=True,
+            ):
+                full_response += chunk
+                token_count += 1
 
-            now = time.time()
-            should_update = (
-                (now - last_edit_time >= 1.0) or
-                (token_count >= 20 and now - last_edit_time >= 0.5)
-            )
-
-            if should_update and full_response.strip():
-                display = full_response + " ▫️"
-                try:
-                    await sent_message.edit_text(display)
-                    last_edit_time = now
-                    token_count = 0
-                except Exception:
-                    pass
-
-        if full_response.strip():
-            chunks = split_message(full_response)
-            try:
-                await sent_message.edit_text(chunks[0])
-            except Exception:
-                pass
-            for extra in chunks[1:]:
-                await update.message.reply_text(extra)
-        else:
-            await sent_message.edit_text("(empty response)")
-
-        if user_raw_mode.get(user_id, False):
-            raw_payload = {
-                "provider": provider.name,
-                "model": model,
-                "response_length": len(full_response),
-            }
-            await update.message.reply_text(
-                f"```json\n{json.dumps(raw_payload, indent=2)}\n```",
-                parse_mode="MarkdownV2",
-            )
-
-        user_contexts[user_id].append({
-            "role": "assistant",
-            "content": full_response,
-        })
-
-        _skill_generator.record_task(text)
-        if _skill_generator.should_generate(text):
-            skill = await _skill_generator.generate_skill(text, provider, model)
-            if skill:
-                await update.message.reply_text(
-                    f"🧠 Auto-generated skill: *{skill['name']}*",
-                    parse_mode="MarkdownV2",
+                now = time.time()
+                should_update = (
+                    (now - last_edit_time >= 1.0) or
+                    (token_count >= 20 and now - last_edit_time >= 0.5)
                 )
 
-    except Exception as e:
-        error_msg = f"Error ({provider.name}): {e}"
-        logger.error(error_msg)
-        if update.message:
-            await update.message.reply_text(error_msg)
+                if should_update and full_response.strip():
+                    display = full_response + " ▫️"
+                    try:
+                        await sent_message.edit_text(display)
+                        last_edit_time = now
+                        token_count = 0
+                    except Exception:
+                        pass
+
+            if full_response.strip():
+                chunks = split_message(full_response)
+                try:
+                    await sent_message.edit_text(chunks[0])
+                except Exception:
+                    pass
+                for extra in chunks[1:]:
+                    await update.message.reply_text(extra)
+            else:
+                await sent_message.edit_text("(empty response)")
+
+            user_contexts[user_id].append({
+                "role": "assistant",
+                "content": full_response,
+            })
+
+            # Check for <execute> tag
+            match = re.search(r'<execute>(.*?)</execute>', full_response, re.DOTALL)
+            if match and user_id == _get_config().owner_id:
+                cmd = match.group(1).strip()
+                await update.message.reply_text(f"🛠 *Executing:* `{cmd}`", parse_mode="MarkdownV2")
+                
+                output = await _execute_shell_and_reply(update, cmd, bypass_allowlist=True)
+                sys_msg = f"[SYSTEM COMMAND EXECUTION RESULT: {cmd}]\n{output}"
+                user_contexts[user_id].append({"role": "system", "content": sys_msg})
+                
+                # Feedback on result
+                if not output:
+                    await update.message.reply_text("_Command produced no output or error_", parse_mode="MarkdownV2")
+                # Loop continues to let AI respond to the result
+            else:
+                # No execution or not authorized, we are done
+                break
+
+        except Exception as e:
+            error_msg = f"Error ({provider.name}): {e}"
+            logger.error(error_msg)
+            if update.message:
+                await update.message.reply_text(error_msg)
+            break
+
+    # Record tasks and generate skills after the final turn
+    _skill_generator.record_task(text)
+    if _skill_generator.should_generate(text):
+        skill = await _skill_generator.generate_skill(text, provider, model)
+        if skill:
+            await update.message.reply_text(
+                f"🧠 Auto-generated skill: *{skill['name']}*",
+                parse_mode="MarkdownV2",
+            )
 
 
 def setup_bot(config: Config) -> Application:
