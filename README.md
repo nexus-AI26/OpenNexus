@@ -34,7 +34,12 @@ OpenNexus now features a **Premium Web UI** and an **Autonomous Agent Loop** to 
 
 ## Installation
 
+### One-liner (Linux/macOS)
 ```bash
+curl -fsSL https://raw.githubusercontent.com/nexus-AI26/OpenNexus/main/install.sh | bash
+```
+
+### Manual Installation
 git clone https://github.com/nexus-AI26/OpenNexus.git
 cd OpenNexus
 
