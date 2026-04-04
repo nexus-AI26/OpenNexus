@@ -1,30 +1,112 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenNexus Web</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenNexus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="app-container">
-        <header class="app-header">
-            <div class="logo">OpenNexus</div>
-            <div class="status">● Online</div>
-        </header>
-        <div class="chat-container">
-            <div class="chat-history" id="chat-history">
-                <div class="message system-msg">
-                    Welcome to OpenNexus Terminal. Type a command or question to begin.
-                </div>
-            </div>
-            <div class="input-container">
-                <input type="text" id="chat-input" placeholder="Type a message or system command..." autocomplete="off">
-                <button id="send-btn">Send</button>
-            </div>
-        </div>
+<div class="layout">
+
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-bracket">&gt;</span>
+        <span class="logo-text">NX_</span>
+        <span class="logo-cursor"></span>
+      </div>
+      <div class="version">v1.0</div>
     </div>
-    <script src="/static/js/app.js"></script>
+
+    <nav class="nav-section">
+      <div class="nav-label">Interface</div>
+      <button class="nav-item active" onclick="showPanel('chat')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v9H9l-3 3v-3H2V2z"/></svg>
+        Chat
+      </button>
+      <button class="nav-item" onclick="showPanel('skills')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z"/></svg>
+        Skills
+      </button>
+      <button class="nav-item" onclick="showPanel('history')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM7 4h2v5H5V7h2V4z"/></svg>
+        History
+      </button>
+    </nav>
+
+    <div class="nav-section">
+      <div class="nav-label">System</div>
+      <div class="info-row">
+        <span class="info-key">Provider</span>
+        <span class="info-val" id="sb-provider">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-key">Model</span>
+        <span class="info-val" id="sb-model">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-key">Status</span>
+        <span class="info-val accent" id="sb-status">Online</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn-ghost danger" onclick="clearChat()">Clear Context</button>
+      <button class="btn-ghost" onclick="exportChat()">Export MD</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div id="panel-chat" class="panel active">
+      <div class="panel-header">
+        <div class="panel-title">Terminal Chat</div>
+        <div class="header-actions">
+          <span class="token-count" id="token-count">0 tokens</span>
+        </div>
+      </div>
+
+      <div class="chat-messages" id="chat-messages">
+        <div class="welcome-banner">
+          <div class="welcome-title">&gt; OpenNexus initialized</div>
+          <div class="welcome-sub">AI assistant for developers and ethical hackers. All commands execute on the local machine.</div>
+        </div>
+      </div>
+
+      <div class="input-bar">
+        <span class="prompt-symbol">&gt;_</span>
+        <textarea id="chat-input" placeholder="Enter message or command..." rows="1" autocomplete="off"></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 1l14 7-14 7V9l10-1L1 7V1z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="panel-skills" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Auto-Generated Skills</div>
+        <button class="btn-ghost small" onclick="loadSkills()">Refresh</button>
+      </div>
+      <div class="skills-grid" id="skills-grid">
+        <div class="empty-state">No skills generated yet. Start chatting to build skills automatically.</div>
+      </div>
+    </div>
+
+    <div id="panel-history" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Conversation History</div>
+        <button class="btn-ghost small danger" onclick="clearChat()">Clear</button>
+      </div>
+      <div class="history-list" id="history-list">
+        <div class="empty-state">No conversation history yet.</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+<script src="/static/js/app.js"></script>
 </body>
 </html>
