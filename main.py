@@ -17,14 +17,20 @@ logger = logging.getLogger("opennexus")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="OpenNexus AI Assistant")
-    parser.add_argument("mode", nargs="?", default="bot", choices=["bot", "web"], help="Mode to run (bot or web)")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default="all",
+        choices=["all", "bot", "web"],
+        help="all = Telegram + Web UI (default); bot = Telegram only; web = Web UI only",
+    )
     args = parser.parse_args()
 
     logger.info("OpenNexus starting in %s mode...", args.mode.upper())
 
     config = Config()
 
-    errors = config.validate()
+    errors = config.validate(mode=args.mode)
     if errors:
         for err in errors:
             logger.error("CONFIG: %s", err)
@@ -46,21 +52,52 @@ def main() -> None:
             len(secret_warnings) + len(code_warnings),
         )
 
-    if args.mode == "bot":
+    if args.mode == "web":
+        import uvicorn
+        from web.webui import create_app
+
+        app = create_app(config)
+        logger.info("Web UI at http://0.0.0.0:8000 (Ctrl+C to stop)")
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    elif args.mode == "bot":
+        if not config.bot_token:
+            logger.error("Bot token missing. Use `web` mode or set bot_token in config.")
+            sys.exit(1)
         logger.info("Initializing Telegram bot...")
         app = setup_bot(config)
-
         logger.info(
-            "OpenNexus is live. Default provider: %s. Polling started.",
+            "OpenNexus bot live. Default provider: %s. Polling started.",
             config.default_provider,
         )
         app.run_polling(drop_pending_updates=True)
-    elif args.mode == "web":
+    else:
+        import threading
         import uvicorn
         from web.webui import create_app
-        app = create_app(config)
-        logger.info("Starting Web UI on http://localhost:8000")
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+
+        if not config.bot_token:
+            app = create_app(config)
+            logger.warning("No bot_token — Web UI only (same as `web` mode).")
+            logger.info("Web UI at http://0.0.0.0:8000")
+            uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+            return
+
+        web_app = create_app(config)
+
+        def _run_web() -> None:
+            uvicorn.run(web_app, host="0.0.0.0", port=8000, log_level="warning")
+
+        web_thread = threading.Thread(target=_run_web, name="opennexus-web", daemon=True)
+        web_thread.start()
+        logger.info("Web UI running in background at http://0.0.0.0:8000")
+
+        logger.info("Initializing Telegram bot...")
+        app = setup_bot(config)
+        logger.info(
+            "OpenNexus is live (Telegram + Web). Default provider: %s.",
+            config.default_provider,
+        )
+        app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()

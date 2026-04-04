@@ -220,9 +220,10 @@ class Config:
             return f"[{items}]"
         return f'"{v}"'
 
-    def validate(self) -> list[str]:
+    def validate(self, mode: str = "all") -> list[str]:
         errors: list[str] = []
-        if not self.bot_token:
+        need_bot_token = mode == "bot"
+        if need_bot_token and not self.bot_token:
             errors.append(
                 "Bot token not set. Set OPENNEXUS_BOT_TOKEN env var or "
                 "bot_token in ~/.opennexus/config.toml"

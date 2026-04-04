@@ -2,141 +2,128 @@
 
 > AI assistant for developers and ethical hackers — multi-interface, autonomous, and extensible.
 
-A security-hardened AI assistant built for technical users. OpenNexus includes a **modern Web UI** and an **Autonomous Agent Loop** capable of executing real system commands (e.g., `nmap`, `grep`, `whoami`) and reasoning over their output.
+OpenNexus includes a **Web UI** and a **Telegram bot** sharing the same conversation state (when both run). The agent loop can emit `<execute>command</execute>` to run real shell commands on the host and reason over the output.
 
 ---
 
 ## Features
 
-* **Dual interface** — interact via **Telegram** or the built-in **Web UI** (eco-minimalist dark mode)
-* **Autonomous agent loop** — executes commands via `<execute>` tags and processes real output
-* **Multi-provider support** — Anthropic, OpenAI, OpenRouter, Groq, Ollama, and custom providers
-* **Dynamic model switching** — change models mid-session with `/model`
-* **Self-extending skill system** — generates and stores reusable skills locally
-* **Isolated user contexts** — per-user conversation separation
-* **Streaming responses** — live output with message updates
-* **Access control** — whitelist-based user restrictions
-* **File ingestion** — supports `.py`, `.sh`, `.txt`, `.md`, `.json`, `.log`
-* **Sandboxed shell execution** — with audit logging
-* **Privacy-first** — no telemetry, no cloud sync; all data stays local
+* **Telegram + Web UI** — default mode runs the bot and serves the Web UI on port **8000** in the background (same process)
+* **Web UI modules** — chat (with `/stop` and `/wait`), model/provider switch, system prompt (session), context stats, DuckDuckGo search, skills, history, command reference
+* **Autonomous agent loop** — `<execute>` tags, real command output fed back to the model
+* **Multi-provider** — Anthropic, OpenAI, OpenRouter, Groq, Ollama, custom (OpenAI-compatible)
+* **Skills** — locally stored, auto-generated hints from repeated tasks
+* **Streaming** — live responses in Telegram and the browser
+* **Access control** — Telegram whitelist; Web UI uses configured `owner_id` context
+* **File ingestion** (Telegram) — `.py`, `.sh`, `.txt`, `.md`, `.json`, `.log`
+* **Command allowlist + logging** — configurable `allowed_commands` and execution logs
 
 ---
 
 ## Requirements
 
 * Python 3.11+
-* Telegram bot token (optional, for bot mode)
-* At least one AI provider API key or a running Ollama instance
+* **Telegram** — `bot_token` only required for `bot` or `all` with Telegram enabled (`all` without a token falls back to Web UI only)
+* **`access.owner_id`** and **`access.allowed_users`** — required for startup validation (Web UI uses `owner_id` for the chat session)
+* At least one provider API key, or Ollama reachable at your configured `base_url`
 
 ---
 
 ## Installation
 
-### Quick Install (Linux/macOS)
+### Quick install (Debian / Ubuntu–style, uses `apt-get`)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nexus-AI26/OpenNexus/main/install.sh | bash
 ```
 
-### Manual Installation
+On other Linux distros, macOS, or Windows, use **manual installation** below (or adapt package commands for `git` / `python3` / `venv`).
+
+### Manual installation
 
 ```bash
 git clone https://github.com/nexus-AI26/OpenNexus.git
 cd OpenNexus
 
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 pip install -e .
 
 mkdir -p ~/.opennexus
 cp config.toml.example ~/.opennexus/config.toml
 ```
 
-Edit `~/.opennexus/config.toml` and configure your bot token, user IDs, and API keys.
+Edit `~/.opennexus/config.toml`: set `access.owner_id`, `access.allowed_users`, and provider keys. Set `bot_token` if you use Telegram.
 
 ---
 
 ## Usage
 
-### Web UI (Recommended)
+| Mode | Command | Behavior |
+|------|---------|----------|
+| **Default** | `python main.py` or `opennexus` | Telegram (if `bot_token` set) **and** Web UI at `http://0.0.0.0:8000` (Web runs in a background thread) |
+| Web only | `python main.py web` or `opennexus web` | FastAPI UI only on port 8000 |
+| Bot only | `python main.py bot` or `opennexus bot` | Telegram only; requires `bot_token` |
 
-```bash
-opennexus web
-```
-
-Open: [http://localhost:8000](http://localhost:8000)
-
-### Telegram Bot
-
-```bash
-opennexus bot
-```
+Open the UI locally: [http://localhost:8000](http://localhost:8000). If you run on a remote server, open port **8000** in your firewall or bind/reverse-proxy as needed.
 
 ---
 
 ## Configuration
 
-All configuration is stored in:
+Path: `~/.opennexus/config.toml` (overrides via env vars where documented in `config.py`).
 
-```
-~/.opennexus/config.toml
-```
-
-Environment variables override config values.
-
-### Core Fields
-
-| Field                       | Env Variable               | Description            |
-| --------------------------- | -------------------------- | ---------------------- |
-| `bot_token`                 | `OPENNEXUS_BOT_TOKEN`      | Telegram bot token     |
-| `access.owner_id`           | —                          | Admin Telegram user ID |
-| `access.allowed_users`      | —                          | Allowed user IDs       |
-| `providers.default`         | —                          | Default provider       |
-| `providers.<name>.api_key`  | `OPENNEXUS_<NAME>_API_KEY` | Provider API key       |
-| `security.allowed_commands` | —                          | Allowed shell commands |
-| `system_prompt`             | —                          | Core system behavior   |
+| Field | Env (examples) | Description |
+|-------|----------------|-------------|
+| `bot_token` | `OPENNEXUS_BOT_TOKEN` | Telegram bot token |
+| `access.owner_id` | — | Admin Telegram user ID; Web UI session user |
+| `access.allowed_users` | — | Allowed Telegram user IDs |
+| `providers.default` | — | Default provider name |
+| `providers.<name>.api_key` | `OPENNEXUS_<NAME>_API_KEY` | Provider key |
+| `security.allowed_commands` | — | Allowlisted shell commands for `<execute>` / `/run` |
+| `system_prompt` | — | Base system prompt (Web can override per session in the UI) |
 
 ---
 
-## Telegram Commands
+## Telegram commands
 
-| Command                     | Description                        |
-| --------------------------- | ---------------------------------- |
-| `/start`                    | Show help message                  |
-| `/clear`                    | Reset conversation                 |
-| `/model <provider> <model>` | Switch model                       |
-| `/skills`                   | List learned skills                |
-| `/export`                   | Export chat as `.md`               |
-| `/run <command>`            | Execute shell command (owner only) |
-
----
-
-## Autonomous Execution Flow
-
-When a task requires system interaction:
-
-1. User request triggers execution intent
-2. Model emits:
-
-   ```xml
-   <execute>command</execute>
-   ```
-3. System executes the command
-4. Output is returned to the model
-5. Model responds with analysis
+| Command | Description |
+|---------|-------------|
+| `/start`, `/help` | Help and command list |
+| `/clear` | Clear conversation context |
+| `/model <provider> <model>` | Switch provider and model |
+| `/skills` | List skills |
+| `/skill show <id>`, `/skill delete <id>` | Show or delete a skill |
+| `/search <query>` | Web search |
+| `/export` | Export chat as Markdown |
+| `/system`, `/system set <text>` | Show or override system prompt (session) |
+| `/tokens` | Approximate context size |
+| `/raw` | Toggle raw API-style replies |
+| `/stop` | Stop the current streamed reply |
+| `/wait <text>` | Inject a note during generation (model continues) |
+| `/run <command>` | Run shell (owner only; same allowlist as `<execute>`) |
 
 ---
 
-## Security Notes
+## Autonomous execution flow
 
-* Only commands defined in `allowed_commands` are executable
-* All executions are logged
-* Use minimal permissions for API keys
-* Run inside a controlled environment (VM recommended)
+1. User sends a request.
+2. The model may output `<execute>command</execute>`.
+3. The host runs the command (allowlist / owner rules apply).
+4. Output is injected into context as a system message.
+5. The model continues with the real output.
+
+---
+
+## Security notes
+
+* Only commands in `allowed_commands` run (plus owner-only `/run` / `<execute>` rules as implemented).
+* Executions are logged under `~/.opennexus/logs/`.
+* Use least-privilege API keys and run in a VM or container when exposing port 8000.
 
 ---
 
 ## License
 
-`LICENSE`
+See `LICENSE`.

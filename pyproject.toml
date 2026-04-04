@@ -5,11 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opennexus"
 version = "1.0.0"
-description = "AI assistant for developers and ethical hackers. Telegram-only. Multi-provider."
+description = "AI assistant for developers and ethical hackers — Telegram, Web UI, multi-provider."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot[ext]>=20.0,<22.0",
+    "httpx>=0.27.0,<1.0",
+    "duckduckgo-search>=5.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+]
+
+[project.scripts]
+opennexus = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "config"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["bot*", "providers*", "skills*", "security*"]
+include = ["bot*", "providers*", "skills*", "security*", "tools*", "web*"]

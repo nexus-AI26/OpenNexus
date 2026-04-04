@@ -18,27 +18,51 @@
         <span class="logo-text">NX_</span>
         <span class="logo-cursor"></span>
       </div>
-      <div class="version">v1.0</div>
+      <div class="version">v1.1</div>
     </div>
 
     <nav class="nav-section">
-      <div class="nav-label">Interface</div>
-      <button class="nav-item active" onclick="showPanel('chat', this)">
+      <div class="nav-label">Core</div>
+      <button type="button" class="nav-item active" onclick="showPanel('chat', this)">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v9H9l-3 3v-3H2V2z"/></svg>
         Chat
       </button>
-      <button class="nav-item" onclick="showPanel('skills', this)">
+      <button type="button" class="nav-item" onclick="showPanel('model', this)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v2H2V3zm0 4h8v2H2V7zm0 4h10v2H2v-2z"/></svg>
+        Model
+      </button>
+      <button type="button" class="nav-item" onclick="showPanel('system', this)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1L1 4v2c0 4.5 2.9 8 7 9 4.1-1 7-4.5 7-9V4L8 1z"/></svg>
+        System
+      </button>
+      <button type="button" class="nav-item" onclick="showPanel('tokens', this)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2V2zm2 2v8h8V4H4zm2 2h4v1H6V6zm0 2h4v1H6V8z"/></svg>
+        Context
+      </button>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-label">Tools</div>
+      <button type="button" class="nav-item" onclick="showPanel('search', this)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11 6a5 5 0 10-2 4l3 3 1-1-3-3zm-4 1a3 3 0 110-6 3 3 0 010 6z"/></svg>
+        Web search
+      </button>
+      <button type="button" class="nav-item" onclick="showPanel('skills', this)">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z"/></svg>
         Skills
       </button>
-      <button class="nav-item" onclick="showPanel('history', this)">
+      <button type="button" class="nav-item" onclick="showPanel('history', this)">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM7 4h2v5H5V7h2V4z"/></svg>
         History
+      </button>
+      <button type="button" class="nav-item" onclick="showPanel('reference', this)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 2h10v12H3V2zm2 2v8h6V4H5zm1 1h4v1H6V5zm0 2h4v1H6V7z"/></svg>
+        Reference
       </button>
     </nav>
 
     <div class="nav-section">
-      <div class="nav-label">System</div>
+      <div class="nav-label">Session</div>
       <div class="info-row">
         <span class="info-key">Provider</span>
         <span class="info-val" id="sb-provider">—</span>
@@ -54,8 +78,8 @@
     </div>
 
     <div class="sidebar-footer">
-      <button class="btn-ghost danger" onclick="clearChat()">Clear Context</button>
-      <button class="btn-ghost" onclick="exportChat()">Export MD</button>
+      <button type="button" class="btn-ghost danger" onclick="clearChat()">Clear context</button>
+      <button type="button" class="btn-ghost" onclick="exportChat()">Export MD</button>
     </div>
   </aside>
 
@@ -63,7 +87,7 @@
 
     <div id="panel-chat" class="panel active">
       <div class="panel-header">
-        <div class="panel-title">Terminal Chat</div>
+        <div class="panel-title">Chat</div>
         <div class="header-actions">
           <span class="token-count" id="token-count">0 tokens</span>
         </div>
@@ -71,37 +95,141 @@
 
       <div class="chat-messages" id="chat-messages">
         <div class="welcome-banner">
-          <div class="welcome-title">&gt; OpenNexus initialized</div>
-          <div class="welcome-sub">AI assistant for developers and ethical hackers. All commands execute on the local machine.</div>
+          <div class="welcome-title">&gt; OpenNexus</div>
+          <div class="welcome-sub">Use <code>/stop</code> to cancel generation and <code>/wait &lt;note&gt;</code> to steer the model mid-stream. Shell runs on this machine via <code>&lt;execute&gt;</code>.</div>
         </div>
       </div>
 
       <div class="input-bar">
         <span class="prompt-symbol">&gt;_</span>
-        <textarea id="chat-input" placeholder="Enter message or command..." rows="1" autocomplete="off"></textarea>
-        <button class="send-btn" id="send-btn" onclick="sendMessage()">
+        <textarea id="chat-input" placeholder="Message, /stop, /wait …" rows="1" autocomplete="off"></textarea>
+        <button type="button" class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 1l14 7-14 7V9l10-1L1 7V1z"/></svg>
         </button>
       </div>
     </div>
 
+    <div id="panel-model" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Model &amp; provider</div>
+        <button type="button" class="btn-ghost small" onclick="loadModelPanel()">Refresh</button>
+      </div>
+      <div class="form-panel">
+        <p class="form-hint">Matches Telegram <code>/model &lt;provider&gt; &lt;model&gt;</code>. Same session as the bot when both run.</p>
+        <div class="field">
+          <label for="model-provider">Provider</label>
+          <select id="model-provider"></select>
+        </div>
+        <div class="field">
+          <label for="model-name">Model ID</label>
+          <input type="text" id="model-name" placeholder="e.g. gpt-4o, anthropic/claude-3.5-sonnet" autocomplete="off" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-primary" onclick="saveModel()">Apply</button>
+        </div>
+        <div id="model-catalog" class="catalog-list"></div>
+      </div>
+    </div>
+
+    <div id="panel-system" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">System prompt</div>
+        <button type="button" class="btn-ghost small" onclick="loadSystemPanel()">Reload</button>
+      </div>
+      <div class="form-panel">
+        <p class="form-hint">Session override (not written to <code>config.toml</code>). Skill-generation hints are appended automatically.</p>
+        <div class="field stretch">
+          <label for="system-prompt-text">Prompt</label>
+          <textarea id="system-prompt-text" rows="16" spellcheck="false"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-primary" onclick="saveSystemPrompt()">Save session prompt</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="panel-tokens" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Context size</div>
+        <button type="button" class="btn-ghost small" onclick="loadTokensPanel()">Refresh</button>
+      </div>
+      <div class="form-panel">
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-label">Messages</div>
+            <div class="stat-value" id="tok-messages">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Characters</div>
+            <div class="stat-value" id="tok-chars">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">~Tokens</div>
+            <div class="stat-value" id="tok-approx">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="panel-search" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Web search</div>
+      </div>
+      <div class="form-panel">
+        <p class="form-hint">DuckDuckGo-backed search (same stack as Telegram <code>/search</code>).</p>
+        <div class="field row">
+          <input type="text" id="search-query" placeholder="Query…" autocomplete="off" />
+          <button type="button" class="btn-primary" onclick="runWebSearch()">Search</button>
+        </div>
+        <div id="search-results" class="search-results"></div>
+      </div>
+    </div>
+
     <div id="panel-skills" class="panel">
       <div class="panel-header">
-        <div class="panel-title">Auto-Generated Skills</div>
-        <button class="btn-ghost small" onclick="loadSkills()">Refresh</button>
+        <div class="panel-title">Skills</div>
+        <button type="button" class="btn-ghost small" onclick="loadSkills()">Refresh</button>
       </div>
       <div class="skills-grid" id="skills-grid">
-        <div class="empty-state">No skills generated yet. Start chatting to build skills automatically.</div>
+        <div class="empty-state">No skills yet. Chat to auto-generate.</div>
       </div>
     </div>
 
     <div id="panel-history" class="panel">
       <div class="panel-header">
-        <div class="panel-title">Conversation History</div>
-        <button class="btn-ghost small danger" onclick="clearChat()">Clear</button>
+        <div class="panel-title">History</div>
+        <button type="button" class="btn-ghost small danger" onclick="clearChat()">Clear</button>
       </div>
       <div class="history-list" id="history-list">
-        <div class="empty-state">No conversation history yet.</div>
+        <div class="empty-state">No history yet.</div>
+      </div>
+    </div>
+
+    <div id="panel-reference" class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Command reference</div>
+      </div>
+      <div class="reference-body">
+        <h3>Chat input</h3>
+        <ul class="ref-list">
+          <li><code>/stop</code> — stop the current streamed reply</li>
+          <li><code>/wait &lt;text&gt;</code> — queue guidance during generation</li>
+        </ul>
+        <h3>Telegram (same backend)</h3>
+        <ul class="ref-list">
+          <li><code>/start</code>, <code>/help</code>, <code>/clear</code></li>
+          <li><code>/model &lt;provider&gt; &lt;model&gt;</code></li>
+          <li><code>/skills</code>, <code>/skill show|delete &lt;id&gt;</code></li>
+          <li><code>/search &lt;q&gt;</code>, <code>/export</code>, <code>/tokens</code></li>
+          <li><code>/system</code> and <code>/system set …</code></li>
+          <li><code>/run</code> (owner): shell</li>
+        </ul>
+        <h3>Run modes</h3>
+        <ul class="ref-list">
+          <li><code>python main.py</code> or <code>opennexus</code> — Telegram + Web (default)</li>
+          <li><code>opennexus web</code> — Web only</li>
+          <li><code>opennexus bot</code> — Telegram only</li>
+        </ul>
       </div>
     </div>
 

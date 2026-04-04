@@ -21,14 +21,14 @@ echo "Application directory: ${APP_DIR}"
 
 cat > /etc/systemd/system/opennexus.service << EOF
 [Unit]
-Description=OpenNexus AI Assistant
+Description=OpenNexus AI (Telegram + Web UI)
 After=network.target
 
 [Service]
 Type=simple
 User=${USER_NAME}
 WorkingDirectory=${APP_DIR}
-ExecStart=/usr/bin/env python3 main.py
+ExecStart=/usr/bin/env python3 main.py all
 Environment=PATH=${APP_DIR}/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Restart=on-failure
 RestartSec=5

@@ -123,6 +123,8 @@ log_info "Upgrading pip..."
 
 log_info "Installing dependencies..."
 "$VENV_PIP" install --quiet -r "$INSTALL_DIR/requirements.txt"
+log_info "Installing package (editable, optional CLI: opennexus)..."
+"$VENV_PIP" install --quiet -e "$INSTALL_DIR"
 log_ok "Dependencies installed."
 
 log_step "Setting up config directory"
@@ -133,10 +135,10 @@ if [[ ! -f "$CONFIG_DIR/config.toml" ]]; then
     cp "$INSTALL_DIR/config.toml.example" "$CONFIG_DIR/config.toml"
     log_ok "Created $CONFIG_DIR/config.toml from example."
     log_warn "Edit $CONFIG_DIR/config.toml and fill in:"
-    log_warn "  - bot_token       (from @BotFather)"
-    log_warn "  - access.owner_id (your Telegram ID from @userinfobot)"
+    log_warn "  - access.owner_id (Telegram ID; also used by Web UI)"
     log_warn "  - access.allowed_users"
-    log_warn "  - At least one provider API key"
+    log_warn "  - At least one provider API key (or Ollama)"
+    log_warn "  - bot_token       (from @BotFather; omit for Web-only)"
 else
     log_info "Config already exists — skipping."
 fi
@@ -168,14 +170,14 @@ if $INSTALL_SERVICE; then
 
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=OpenNexus Telegram AI Assistant
+Description=OpenNexus AI (Telegram + Web UI)
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${VENV_PYTHON} ${INSTALL_DIR}/main.py bot
+ExecStart=${VENV_PYTHON} ${INSTALL_DIR}/main.py all
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -201,23 +203,23 @@ echo ""
 echo -e "  1. Edit your config:"
 echo -e "     ${CYAN}nano $CONFIG_DIR/config.toml${RESET}"
 echo ""
-echo -e "  2. Fill in bot_token, owner_id, allowed_users,"
-echo -e "     and at least one provider API key."
+echo -e "  2. Fill in owner_id, allowed_users, provider keys;"
+echo -e "     add bot_token if you use Telegram (optional for Web-only)."
 echo ""
 if $INSTALL_SERVICE; then
-    echo -e "  3. Start Telegram bot:"
+    echo -e "  3. Start OpenNexus (Telegram + Web on port 8000):"
     echo -e "     ${CYAN}systemctl start opennexus${RESET}"
     echo ""
-    echo -e "  4. Start Web UI (optional):"
-    echo -e "     ${CYAN}opennexus web${RESET}"
+    echo -e "  4. Web UI: ${CYAN}http://<host>:8000${RESET} (runs in background with the bot)"
     echo ""
-    echo -e "  5. Follow logs:"
+    echo -e "  5. Logs:"
     echo -e "     ${CYAN}journalctl -u opennexus -f${RESET}"
 else
-    echo -e "  3. Run Telegram bot:"
-    echo -e "     ${CYAN}opennexus bot${RESET}"
+    echo -e "  3. From any directory, run (launcher uses repo venv):"
+    echo -e "     ${CYAN}opennexus${RESET}   ${BOLD}# default: Telegram + Web on :8000${RESET}"
+    echo -e "     ${CYAN}opennexus web${RESET}  ${BOLD}# Web UI only${RESET}"
+    echo -e "     ${CYAN}opennexus bot${RESET}  ${BOLD}# Telegram only${RESET}"
     echo ""
-    echo -e "  4. Run Web UI (optional):"
-    echo -e "     ${CYAN}opennexus web${RESET}"
+    echo -e "     Or: ${CYAN}cd $INSTALL_DIR && ./venv/bin/python main.py all${RESET}"
 fi
 echo ""

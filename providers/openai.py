@@ -1,9 +1,8 @@
 import json
 from typing import AsyncGenerator, Any
 
-import httpx
-
 from providers.base import BaseProvider
+from providers.http_client import get_shared_http_client
 
 
 class OpenAIProvider(BaseProvider):
@@ -35,41 +34,41 @@ class OpenAIProvider(BaseProvider):
         }
 
         headers = self.get_headers()
+        client = get_shared_http_client()
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            if stream:
-                async with client.stream(
-                    "POST", url, json=body, headers=headers
-                ) as resp:
-                    if resp.status_code != 200:
-                        error_body = await resp.aread()
-                        raise RuntimeError(
-                            f"[{self.name}] HTTP {resp.status_code}: "
-                            f"{error_body.decode(errors='replace')}"
-                        )
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            event = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = event.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                yield content
-            else:
-                resp = await client.post(url, json=body, headers=headers)
+        if stream:
+            async with client.stream(
+                "POST", url, json=body, headers=headers
+            ) as resp:
                 if resp.status_code != 200:
+                    error_body = await resp.aread()
                     raise RuntimeError(
-                        f"[{self.name}] HTTP {resp.status_code}: {resp.text}"
+                        f"[{self.name}] HTTP {resp.status_code}: "
+                        f"{error_body.decode(errors='replace')}"
                     )
-                data = resp.json()
-                choices = data.get("choices", [])
-                if choices:
-                    yield choices[0].get("message", {}).get("content", "")
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = event.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content:
+                            yield content
+        else:
+            resp = await client.post(url, json=body, headers=headers)
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"[{self.name}] HTTP {resp.status_code}: {resp.text}"
+                )
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                yield choices[0].get("message", {}).get("content", "")

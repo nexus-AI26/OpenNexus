@@ -4,6 +4,7 @@ import json
 import logging
 import time
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from telegram import Update, constants
@@ -32,6 +33,15 @@ user_providers: dict[int, tuple[str, str]] = {}
 user_system_prompts: dict[int, str] = {}
 user_raw_mode: dict[int, bool] = {}
 user_websearch_enabled: dict[int, bool] = {}
+
+
+@dataclass
+class GenerationControl:
+    stop_requested: bool = False
+    pending_notes: list[str] = field(default_factory=list)
+
+
+user_gen_control: dict[int, GenerationControl] = {}
 
 _config: Config | None = None
 _skill_manager: SkillManager | None = None
@@ -63,6 +73,22 @@ def _get_system_prompt(user_id: int) -> str:
     return user_system_prompts.get(user_id, config.system_prompt)
 
 
+def _get_gen_control(user_id: int) -> GenerationControl:
+    if user_id not in user_gen_control:
+        user_gen_control[user_id] = GenerationControl()
+    return user_gen_control[user_id]
+
+
+def request_generation_stop(user_id: int) -> None:
+    _get_gen_control(user_id).stop_requested = True
+
+
+def enqueue_generation_note(user_id: int, note: str) -> None:
+    n = (note or "").strip()
+    if n:
+        _get_gen_control(user_id).pending_notes.append(n)
+
+
 async def _check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     checker = create_access_checker(_get_config())
     return await checker(update, context)
@@ -84,6 +110,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/system set <text> — Override system prompt\n"
         "/tokens — Approximate token count\n"
         "/raw — Toggle raw API response mode\n"
+        "/stop — Stop the current reply while it is generating\n"
+        "/wait <text> — Send a note during generation \\(continues the reply\\)\n"
         "/help — Full command reference"
     )
     if update.message:
@@ -449,6 +477,33 @@ async def cmd_removeuser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"User {rm_id} removed from whitelist.")
 
 
+async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check(update, context):
+        return
+    user_id = update.effective_user.id
+    _get_gen_control(user_id).stop_requested = True
+    if update.message:
+        await update.message.reply_text("Stopping current reply…")
+
+
+async def cmd_wait(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check(update, context):
+        return
+    args = context.args or []
+    note = " ".join(args).strip()
+    if not note:
+        if update.message:
+            await update.message.reply_text(
+                "Usage: /wait <message>\n"
+                "Sends a note while the bot is generating; it will continue and use your guidance."
+            )
+        return
+    user_id = update.effective_user.id
+    _get_gen_control(user_id).pending_notes.append(note)
+    if update.message:
+        await update.message.reply_text("Noted — I'll work that into the rest of the reply.")
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
@@ -465,6 +520,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "`/system set <text>` — Override system prompt\n"
         "`/tokens` — Show approximate token count\n"
         "`/raw` — Toggle raw API response mode\n"
+        "`/stop` — Stop the current reply mid\\-generation\n"
+        "`/wait <text>` — Note during generation; bot continues with your guidance\n"
         "`/adduser <id>` — Owner: add user to whitelist\n"
         "`/removeuser <id>` — Owner: remove user from whitelist\n"
         "`/help` — This message"
@@ -541,6 +598,15 @@ async def _process_message(
     if not any(m["content"] == text and m["role"] == "user" for m in user_contexts[user_id][-1:]):
         user_contexts[user_id].append({"role": "user", "content": text})
 
+    ctrl = _get_gen_control(user_id)
+    ctrl.stop_requested = False
+    while ctrl.pending_notes:
+        note = ctrl.pending_notes.pop(0)
+        user_contexts[user_id].append({
+            "role": "system",
+            "content": "[User note:]\n" + note,
+        })
+
     base_prompt = _get_system_prompt(user_id)
     system_prompt = (
         base_prompt +
@@ -564,78 +630,148 @@ async def _process_message(
         )
 
         try:
-            full_response = ""
             sent_message = None
             last_edit_time = 0.0
             chunk_count = 0
             typing_refresh = 0
+            turn_segments: list[str] = []
+            stopped = False
 
-            async for chunk in provider.complete(
-                messages=user_contexts[user_id],
-                model=model,
-                system=system_prompt,
-                stream=True,
-            ):
-                full_response += chunk
-                chunk_count += 1
-                typing_refresh += 1
+            while True:
+                current_stream = ""
+                chunk_count = 0
+                typing_refresh = 0
+                restart_stream = False
 
-                if typing_refresh >= 25:
-                    typing_refresh = 0
-                    try:
-                        await context.bot.send_chat_action(
-                            chat_id=update.message.chat_id,
-                            action=constants.ChatAction.TYPING,
-                        )
-                    except Exception:
-                        pass
+                async for chunk in provider.complete(
+                    messages=user_contexts[user_id],
+                    model=model,
+                    system=system_prompt,
+                    stream=True,
+                ):
+                    current_stream += chunk
+                    chunk_count += 1
+                    typing_refresh += 1
 
-                now = time.time()
+                    if ctrl.stop_requested:
+                        ctrl.stop_requested = False
+                        stopped = True
+                        break
 
-                if sent_message is None and full_response.strip():
-                    try:
-                        sent_message = await update.message.reply_text(full_response)
-                        last_edit_time = now
-                    except Exception:
-                        pass
+                    if ctrl.pending_notes:
+                        if current_stream.strip():
+                            user_contexts[user_id].append({
+                                "role": "assistant",
+                                "content": current_stream,
+                            })
+                            turn_segments.append(current_stream)
+                        while ctrl.pending_notes:
+                            note = ctrl.pending_notes.pop(0)
+                            user_contexts[user_id].append({
+                                "role": "system",
+                                "content": (
+                                    "[User interjection while you were replying — continue and apply this:]\n"
+                                    + note
+                                ),
+                            })
+                        restart_stream = True
+                        break
+
+                    if typing_refresh >= 18:
+                        typing_refresh = 0
+                        try:
+                            await context.bot.send_chat_action(
+                                chat_id=update.message.chat_id,
+                                action=constants.ChatAction.TYPING,
+                            )
+                        except Exception:
+                            pass
+
+                    now = time.time()
+                    display_text = "".join(turn_segments) + current_stream
+
+                    if sent_message is None and display_text.strip():
+                        try:
+                            sent_message = await update.message.reply_text(display_text)
+                            last_edit_time = now
+                        except Exception:
+                            pass
+                        continue
+
+                    should_update = (
+                        sent_message is not None
+                        and display_text.strip()
+                        and ((now - last_edit_time >= 0.07) or (chunk_count >= 3))
+                    )
+
+                    if should_update:
+                        try:
+                            await sent_message.edit_text(display_text)
+                            last_edit_time = now
+                            chunk_count = 0
+                        except Exception:
+                            pass
+
+                if stopped:
+                    agg = "".join(turn_segments) + current_stream
+                    if current_stream.strip():
+                        user_contexts[user_id].append({
+                            "role": "assistant",
+                            "content": current_stream + "\n\n[Generation stopped by user.]",
+                        })
+                    elif turn_segments:
+                        user_contexts[user_id].append({
+                            "role": "system",
+                            "content": "[User stopped generation.]",
+                        })
+                    tail = "(Stopped by user.)"
+                    show = (agg + "\n\n" + tail) if agg.strip() else tail
+                    chunks = split_message(show)
+                    if sent_message:
+                        try:
+                            await sent_message.edit_text(chunks[0])
+                        except Exception:
+                            pass
+                    else:
+                        sent_message = await update.message.reply_text(chunks[0])
+                    for extra in chunks[1:]:
+                        await update.message.reply_text(extra)
+                    break
+
+                if restart_stream:
                     continue
 
-                should_update = (
-                    sent_message is not None and
-                    full_response.strip() and
-                    ((now - last_edit_time >= 0.15) or (chunk_count >= 6))
-                )
+                if current_stream.strip():
+                    user_contexts[user_id].append({
+                        "role": "assistant",
+                        "content": current_stream,
+                    })
+                    turn_segments.append(current_stream)
 
-                if should_update:
-                    try:
-                        await sent_message.edit_text(full_response)
-                        last_edit_time = now
-                        chunk_count = 0
-                    except Exception:
-                        pass
-
-            if full_response.strip():
-                chunks = split_message(full_response)
-                if sent_message:
-                    try:
-                        await sent_message.edit_text(chunks[0])
-                    except Exception:
-                        pass
+                display_text = "".join(turn_segments)
+                if display_text.strip():
+                    chunks = split_message(display_text)
+                    if sent_message:
+                        try:
+                            await sent_message.edit_text(chunks[0])
+                        except Exception:
+                            pass
+                    else:
+                        sent_message = await update.message.reply_text(chunks[0])
+                    for extra in chunks[1:]:
+                        await update.message.reply_text(extra)
                 else:
-                    sent_message = await update.message.reply_text(chunks[0])
-                for extra in chunks[1:]:
-                    await update.message.reply_text(extra)
-            else:
-                if sent_message:
-                    await sent_message.edit_text("(empty response)")
-                else:
-                    await update.message.reply_text("(empty response)")
+                    if sent_message:
+                        await sent_message.edit_text("(empty response)")
+                    else:
+                        await update.message.reply_text("(empty response)")
 
-            user_contexts[user_id].append({
-                "role": "assistant",
-                "content": full_response,
-            })
+                break
 
+            if stopped:
+                break
+
+            full_response = "".join(turn_segments)
             match = re.search(r'<execute>(.*?)</execute>', full_response, re.DOTALL)
             if match and user_id == _get_config().owner_id:
                 cmd = match.group(1).strip()
@@ -687,6 +823,8 @@ def setup_bot(config: Config) -> Application:
     app.add_handler(CommandHandler("system", cmd_system))
     app.add_handler(CommandHandler("tokens", cmd_tokens))
     app.add_handler(CommandHandler("raw", cmd_raw))
+    app.add_handler(CommandHandler("stop", cmd_stop))
+    app.add_handler(CommandHandler("wait", cmd_wait))
     app.add_handler(CommandHandler("adduser", cmd_adduser))
     app.add_handler(CommandHandler("removeuser", cmd_removeuser))
     app.add_handler(CommandHandler("help", cmd_help))

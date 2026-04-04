@@ -21,6 +21,9 @@ function showPanel(name, btn) {
   if (btn) btn.classList.add('active');
   if (name === 'skills') loadSkills();
   if (name === 'history') loadHistory();
+  if (name === 'model') loadModelPanel();
+  if (name === 'system') loadSystemPanel();
+  if (name === 'tokens') loadTokensPanel();
 }
 
 function updateTokenCount() {
@@ -117,6 +120,44 @@ async function sendMessage() {
   const text = chatInput.value.trim();
   if (!text || sendBtn.disabled) return;
 
+  const lower = text.toLowerCase();
+  if (lower === '/stop') {
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    appendSystemNote('Stop requested…');
+    try {
+      await fetch('/api/chat/stop', { method: 'POST' });
+    } catch (e) {
+      appendSystemNote('Stop request failed: ' + e.message);
+    }
+    chatInput.focus();
+    return;
+  }
+  const waitMatch = text.match(/^\/wait\s*(.*)$/i);
+  if (waitMatch) {
+    const note = (waitMatch[1] || '').trim();
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    if (!note) {
+      appendSystemNote('Usage: /wait <your note>');
+      chatInput.focus();
+      return;
+    }
+    try {
+      const r = await fetch('/api/chat/wait', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: note }),
+      });
+      if (r.ok) appendSystemNote('Note queued for the current reply.');
+      else appendSystemNote('Could not queue note.');
+    } catch (e) {
+      appendSystemNote('Could not queue note: ' + e.message);
+    }
+    chatInput.focus();
+    return;
+  }
+
   appendUserMsg(text);
   chatInput.value = '';
   chatInput.style.height = 'auto';
@@ -190,6 +231,12 @@ async function sendMessage() {
             finalizeStreamingBubble(assistantEl);
           }
           appendSystemNote('Error: ' + data.content);
+
+        } else if (data.type === 'stopped') {
+          finalizeStreamingBubble(assistantEl);
+          assistantEl = null;
+          assistantText = '';
+          appendSystemNote('Stopped by user.');
 
         } else if (data.type === 'done') {
           if (assistantEl && !assistantText.trim()) {
@@ -311,6 +358,155 @@ async function loadHistory() {
   } catch(e) {
     list.innerHTML = '<div class="empty-state">Failed to load history.</div>';
   }
+}
+
+async function loadModelPanel() {
+  const sel = document.getElementById('model-provider');
+  const nameEl = document.getElementById('model-name');
+  const cat = document.getElementById('model-catalog');
+  cat.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const [r1, r2] = await Promise.all([fetch('/api/providers'), fetch('/api/model')]);
+    const catalog = await r1.json();
+    const cur = await r2.json();
+    sel.innerHTML = '';
+    for (const p of catalog.providers || []) {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.id + (p.configured ? '' : ' (no key)');
+      sel.appendChild(o);
+    }
+    if (cur.provider && [...sel.options].some(x => x.value === cur.provider)) {
+      sel.value = cur.provider;
+    }
+    nameEl.value = cur.model || '';
+    cat.innerHTML = '';
+    const t = document.createElement('div');
+    t.className = 'form-hint';
+    t.style.marginBottom = '0.5rem';
+    t.textContent = 'Provider defaults from config:';
+    cat.appendChild(t);
+    for (const p of catalog.providers || []) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.textContent = `${p.id}: ${p.default_model || '—'}`;
+      cat.appendChild(row);
+    }
+  } catch (e) {
+    cat.innerHTML = '<div class="empty-state">Failed to load model panel.</div>';
+  }
+}
+
+async function saveModel() {
+  const provider = document.getElementById('model-provider').value;
+  const model = document.getElementById('model-name').value.trim();
+  if (!model) {
+    appendSystemNote('Model ID is required.');
+    return;
+  }
+  try {
+    const r = await fetch('/api/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, model }),
+    });
+    if (!r.ok) {
+      let msg = r.statusText;
+      try {
+        const err = await r.json();
+        if (typeof err.detail === 'string') msg = err.detail;
+      } catch (_) {}
+      appendSystemNote('Model save failed: ' + msg);
+      return;
+    }
+    await loadInfo();
+    appendSystemNote('Model updated.');
+  } catch (e) {
+    appendSystemNote('Model save failed: ' + e.message);
+  }
+}
+
+async function loadSystemPanel() {
+  try {
+    const r = await fetch('/api/system-prompt');
+    const d = await r.json();
+    document.getElementById('system-prompt-text').value = d.prompt || '';
+  } catch (e) {}
+}
+
+async function saveSystemPrompt() {
+  const prompt = document.getElementById('system-prompt-text').value;
+  try {
+    const r = await fetch('/api/system-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!r.ok) {
+      appendSystemNote('Could not save system prompt.');
+      return;
+    }
+    appendSystemNote('System prompt updated (session).');
+  } catch (e) {
+    appendSystemNote('Error: ' + e.message);
+  }
+}
+
+async function loadTokensPanel() {
+  try {
+    const r = await fetch('/api/tokens');
+    const d = await r.json();
+    document.getElementById('tok-messages').textContent =
+      d.messages != null ? String(d.messages) : '—';
+    document.getElementById('tok-chars').textContent =
+      d.chars != null ? d.chars.toLocaleString() : '—';
+    document.getElementById('tok-approx').textContent =
+      d.approx_tokens != null ? d.approx_tokens.toLocaleString() : '—';
+  } catch (e) {}
+}
+
+async function runWebSearch() {
+  const q = document.getElementById('search-query').value.trim();
+  const box = document.getElementById('search-results');
+  if (!q) return;
+  box.innerHTML = '<div class="empty-state">Searching…</div>';
+  try {
+    const r = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q }),
+    });
+    const d = await r.json();
+    if (!d.results || !d.results.length) {
+      box.innerHTML = '<div class="empty-state">No results.</div>';
+      return;
+    }
+    box.innerHTML = '';
+    for (const item of d.results) {
+      const div = document.createElement('div');
+      div.className = 'search-hit';
+      const title = escapeHtml(item.title || '');
+      const url = escapeHtml(item.url || '#');
+      const snip = escapeHtml(item.snippet || '');
+      div.innerHTML =
+        `<a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>` +
+        `<div class="search-snippet">${snip}</div>`;
+      box.appendChild(div);
+    }
+  } catch (e) {
+    box.innerHTML =
+      '<div class="empty-state">Search failed: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+const searchQueryEl = document.getElementById('search-query');
+if (searchQueryEl) {
+  searchQueryEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runWebSearch();
+    }
+  });
 }
 
 chatInput.addEventListener('keydown', e => {
