@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — OpenNexus installer
 # Usage:
-#   sudo bash install.sh           — install with systemd service
+#   sudo bash install.sh           — install with systemd service (recommended)
 #   bash install.sh --no-service   — install locally without service
 # Or via curl:
 #   curl -fsSL https://raw.githubusercontent.com/nexus-AI26/OpenNexus/main/install.sh | bash
@@ -11,7 +11,6 @@ set -euo pipefail
 REPO_URL="https://github.com/nexus-AI26/OpenNexus.git"
 INSTALL_SERVICE=false
 
-# ── Detect root and set paths accordingly ────────────────────────────────────
 if [[ $EUID -eq 0 ]]; then
     INSTALL_DIR="/opt/opennexus"
     CONFIG_DIR="/root/.opennexus"
@@ -25,7 +24,6 @@ SERVICE_FILE="/etc/systemd/system/opennexus.service"
 PYTHON_MIN_MAJOR=3
 PYTHON_MIN_MINOR=11
 
-# ── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -39,21 +37,16 @@ log_warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 log_error() { echo -e "${RED}[ERR ]${RESET}  $*"; }
 log_step()  { echo -e "\n${BOLD}══ $* ${RESET}"; }
 
-# ── Parse args ────────────────────────────────────────────────────────────────
 for arg in "$@"; do
     case "$arg" in
-        --no-service)
-            INSTALL_SERVICE=false
-            ;;
+        --no-service) INSTALL_SERVICE=false ;;
         --help|-h)
             echo "Usage: bash install.sh [--no-service]"
             echo "  --no-service   Skip systemd service installation"
-            exit 0
-            ;;
+            exit 0 ;;
     esac
 done
 
-# ── Banner ────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${CYAN}"
 echo "  ██████╗ ██████╗ ███████╗███╗   ██╗███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗"
@@ -67,10 +60,8 @@ echo -e "  ${BOLD}AI assistant for developers and ethical hackers${RESET}"
 echo -e "  github.com/nexus-AI26/OpenNexus"
 echo ""
 
-# ── Step 1: System dependencies ───────────────────────────────────────────────
 log_step "Checking and installing system dependencies"
 
-# Auto-install git if missing
 if ! command -v git &>/dev/null; then
     log_warn "git not found — installing..."
     apt-get update -qq && apt-get install -y -qq git
@@ -78,14 +69,12 @@ if ! command -v git &>/dev/null; then
 fi
 log_ok "Found $(git --version)"
 
-# Auto-install python3-venv if missing
 if ! python3 -c "import ensurepip" &>/dev/null 2>&1; then
     log_warn "python3-venv not found — installing..."
     apt-get update -qq && apt-get install -y -qq python3-venv python3-pip
     log_ok "python3-venv installed."
 fi
 
-# Python version check
 PYTHON_BIN=""
 for candidate in python3.13 python3.12 python3.11 python3; do
     if command -v "$candidate" &>/dev/null; then
@@ -106,7 +95,6 @@ if [[ -z "$PYTHON_BIN" ]]; then
 fi
 log_ok "Found $($PYTHON_BIN --version)"
 
-# ── Step 2: Clone or update ───────────────────────────────────────────────────
 log_step "Installing OpenNexus to $INSTALL_DIR"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -114,7 +102,6 @@ if [[ -d "$INSTALL_DIR/.git" ]]; then
     git -C "$INSTALL_DIR" pull --ff-only
     log_ok "Updated to latest."
 else
-    # Wipe and reclone if directory exists but is not a git repo
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warn "$INSTALL_DIR exists but is not a git repo — removing..."
         rm -rf "$INSTALL_DIR"
@@ -124,7 +111,6 @@ else
     log_ok "Cloned successfully."
 fi
 
-# ── Step 3: Python virtual environment ───────────────────────────────────────
 log_step "Setting up Python virtual environment"
 
 VENV_DIR="$INSTALL_DIR/venv"
@@ -138,12 +124,13 @@ fi
 VENV_PYTHON="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
 
-log_info "Installing dependencies..."
+log_info "Upgrading pip..."
 "$VENV_PIP" install --quiet --upgrade pip
+
+log_info "Installing dependencies..."
 "$VENV_PIP" install --quiet -r "$INSTALL_DIR/requirements.txt"
 log_ok "Dependencies installed."
 
-# ── Step 4: Config ────────────────────────────────────────────────────────────
 log_step "Setting up config directory"
 
 mkdir -p "$CONFIG_DIR/skills" "$CONFIG_DIR/logs"
@@ -160,7 +147,6 @@ else
     log_info "Config already exists — skipping."
 fi
 
-# ── Step 5: Launcher ──────────────────────────────────────────────────────────
 log_step "Installing launcher"
 
 if [[ $EUID -eq 0 ]]; then
@@ -183,7 +169,6 @@ if [[ $EUID -ne 0 ]] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     log_ok "Added ~/.local/bin to PATH"
 fi
 
-# ── Step 6: Systemd service ───────────────────────────────────────────────────
 if $INSTALL_SERVICE; then
     log_step "Installing systemd service"
 
@@ -196,7 +181,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${VENV_PYTHON} ${INSTALL_DIR}/main.py
+ExecStart=${VENV_PYTHON} ${INSTALL_DIR}/main.py bot
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -212,7 +197,6 @@ EOF
     log_ok "Service installed and enabled."
 fi
 
-# ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo -e "${BOLD}${GREEN}  OpenNexus installed successfully!${RESET}"
@@ -227,13 +211,19 @@ echo -e "  2. Fill in bot_token, owner_id, allowed_users,"
 echo -e "     and at least one provider API key."
 echo ""
 if $INSTALL_SERVICE; then
-    echo -e "  3. Start the service:"
+    echo -e "  3. Start Telegram bot:"
     echo -e "     ${CYAN}systemctl start opennexus${RESET}"
     echo ""
-    echo -e "  4. Follow logs:"
+    echo -e "  4. Start Web UI (optional):"
+    echo -e "     ${CYAN}opennexus web${RESET}"
+    echo ""
+    echo -e "  5. Follow logs:"
     echo -e "     ${CYAN}journalctl -u opennexus -f${RESET}"
 else
-    echo -e "  3. Run OpenNexus:"
-    echo -e "     ${CYAN}opennexus${RESET}"
+    echo -e "  3. Run Telegram bot:"
+    echo -e "     ${CYAN}opennexus bot${RESET}"
+    echo ""
+    echo -e "  4. Run Web UI (optional):"
+    echo -e "     ${CYAN}opennexus web${RESET}"
 fi
 echo ""
