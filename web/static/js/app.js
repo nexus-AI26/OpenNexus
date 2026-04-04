@@ -14,11 +14,11 @@ async function loadInfo() {
   } catch(e) {}
 }
 
-function showPanel(name) {
+function showPanel(name, btn) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
-  event.currentTarget.classList.add('active');
+  if (btn) btn.classList.add('active');
   if (name === 'skills') loadSkills();
   if (name === 'history') loadHistory();
 }
@@ -55,13 +55,23 @@ function appendUserMsg(text) {
   return div;
 }
 
-function appendTyping() {
+function appendAssistantStreamingShell() {
   const div = document.createElement('div');
   div.className = 'msg assistant';
-  div.innerHTML = `<div class="msg-label">nexus</div><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
+  div.innerHTML =
+    `<div class="msg-label">nexus</div><div class="msg-bubble streaming">` +
+    `<span class="stream-md"></span><span class="stream-caret" aria-hidden="true"></span></div>`;
   chatMessages.appendChild(div);
   scrollBottom();
   return div;
+}
+
+function finalizeStreamingBubble(assistantRow) {
+  if (!assistantRow) return;
+  const bubble = assistantRow.querySelector('.msg-bubble');
+  const caret = assistantRow.querySelector('.stream-caret');
+  if (caret) caret.remove();
+  if (bubble) bubble.classList.remove('streaming');
 }
 
 function appendAssistantMsg(text) {
@@ -113,7 +123,8 @@ async function sendMessage() {
   chatInput.focus();
   sendBtn.disabled = true;
 
-  const typingEl = appendTyping();
+  let assistantEl = appendAssistantStreamingShell();
+  let assistantText = '';
 
   try {
     const response = await fetch('/api/chat', {
@@ -123,7 +134,8 @@ async function sendMessage() {
     });
 
     if (!response.ok) {
-      typingEl.remove();
+      assistantEl.remove();
+      assistantEl = null;
       appendSystemNote('Error: ' + response.statusText);
       sendBtn.disabled = false;
       return;
@@ -131,10 +143,7 @@ async function sendMessage() {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
-    let assistantEl = null;
-    let assistantText = '';
     let pendingExecCmd = null;
-    let firstChunk = true;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -148,21 +157,23 @@ async function sendMessage() {
         try { data = JSON.parse(line); } catch { continue; }
 
         if (data.type === 'chunk') {
-          if (firstChunk) {
-            typingEl.remove();
-            firstChunk = false;
-          }
           if (!assistantEl) {
-            assistantEl = appendAssistantMsg('');
+            assistantEl = appendAssistantStreamingShell();
             assistantText = '';
           }
           assistantText += data.content;
-          const bubble = assistantEl.querySelector('.msg-bubble');
-          if (bubble) bubble.innerHTML = renderMarkdown(assistantText);
+          const md = assistantEl.querySelector('.stream-md');
+          const caret = assistantEl.querySelector('.stream-caret');
+          if (md) md.innerHTML = renderMarkdown(assistantText);
+          if (caret && md && md.nextSibling !== caret) md.parentNode.appendChild(caret);
+          totalChars += (data.content || '').length;
+          updateTokenCount();
           scrollBottom();
 
         } else if (data.type === 'execution_start') {
+          finalizeStreamingBubble(assistantEl);
           assistantEl = null;
+          assistantText = '';
           pendingExecCmd = data.command;
           appendSystemNote('Executing: ' + data.command);
 
@@ -172,17 +183,28 @@ async function sendMessage() {
           assistantText = '';
 
         } else if (data.type === 'error') {
-          if (firstChunk) { typingEl.remove(); firstChunk = false; }
+          if (assistantEl && !assistantText) {
+            assistantEl.remove();
+            assistantEl = null;
+          } else {
+            finalizeStreamingBubble(assistantEl);
+          }
           appendSystemNote('Error: ' + data.content);
 
         } else if (data.type === 'done') {
-          if (firstChunk) { typingEl.remove(); firstChunk = false; }
+          if (assistantEl && !assistantText.trim()) {
+            assistantEl.remove();
+            assistantEl = null;
+          } else {
+            finalizeStreamingBubble(assistantEl);
+          }
         }
       }
     }
 
   } catch(e) {
-    typingEl.remove();
+    if (assistantEl && !assistantText) assistantEl.remove();
+    else finalizeStreamingBubble(assistantEl);
     appendSystemNote('Connection failed: ' + e.message);
   }
 

@@ -8,8 +8,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from providers import get_provider
-from config import Config
+from config import Config, SKILLS_DIR
 from bot.handlers import user_contexts, user_providers, _execute_shell_and_reply
+from skills.manager import SkillManager
 
 logger = logging.getLogger("opennexus.web")
 
@@ -91,6 +92,10 @@ def create_app(config: Config) -> FastAPI:
             "output exactly `<execute>the command</execute>`. "
             "Wait for the system result before continuing. DO NOT hallucinate command outputs."
         )
+        skill_mgr = SkillManager(SKILLS_DIR)
+        extra = skill_mgr.build_skill_injection(text, system_prompt)
+        if extra:
+            system_prompt += extra
 
         async def agent_loop():
             max_turns = 5

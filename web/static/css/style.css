@@ -269,6 +269,21 @@ body {
   border-bottom-left-radius: 3px;
 }
 
+.msg-bubble.streaming {
+  min-height: 2.5rem;
+}
+
+.stream-caret {
+  display: inline-block;
+  width: 0.45ch;
+  min-height: 1em;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  border-radius: 1px;
+  animation: blink 1s step-end infinite;
+}
+
 .msg.system-note .msg-bubble {
   background: transparent;
   border: none;

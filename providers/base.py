@@ -45,4 +45,4 @@ class BaseProvider(ABC):
         stream: bool = True,
     ) -> AsyncGenerator[str, None]:
         ...
-        yield  # pragma: no cover
+        yield

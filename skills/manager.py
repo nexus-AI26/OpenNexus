@@ -64,12 +64,15 @@ class SkillManager:
                     break
         return matched
 
-    def build_skill_injection(self, user_input: str) -> str:
+    def build_skill_injection(self, user_input: str, system_so_far: str = "") -> str:
         matched = self.match_skills(user_input)
         if not matched:
             return ""
         injections = [
-            s.get("system_prompt_injection", "") for s in matched if s.get("system_prompt_injection")
+            inj.strip()
+            for s in matched
+            if (inj := (s.get("system_prompt_injection") or "").strip())
+            and inj not in system_so_far
         ]
         if not injections:
             return ""

@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# install.sh — OpenNexus installer
-# Usage:
-#   sudo bash install.sh           — install with systemd service (recommended)
-#   bash install.sh --no-service   — install locally without service
-# Or via curl:
-#   curl -fsSL https://raw.githubusercontent.com/nexus-AI26/OpenNexus/main/install.sh | bash
 
 set -euo pipefail
 

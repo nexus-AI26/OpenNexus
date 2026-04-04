@@ -8,8 +8,6 @@ fi
 
 echo "Installing OpenNexus Systemd Service..."
 
-# Assuming we are running this from the app directory (run sudo from inside openclaw dir)
-# We will get the real user if using sudo
 if [ "$SUDO_USER" ]; then
     USER_NAME=$SUDO_USER
 else
@@ -21,7 +19,6 @@ APP_DIR=$(pwd)
 echo "Setting up service for user: ${USER_NAME}"
 echo "Application directory: ${APP_DIR}"
 
-# Create the service file mapped to the current path and virtual environment
 cat > /etc/systemd/system/opennexus.service << EOF
 [Unit]
 Description=OpenNexus AI Assistant
@@ -31,10 +28,7 @@ After=network.target
 Type=simple
 User=${USER_NAME}
 WorkingDirectory=${APP_DIR}
-# Run with python if no venv is found, otherwise use venv
 ExecStart=/usr/bin/env python3 main.py
-# If you are using a venv, comment the line above and uncomment the line below:
-# ExecStart=${APP_DIR}/.venv/bin/python main.py
 Environment=PATH=${APP_DIR}/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Restart=on-failure
 RestartSec=5

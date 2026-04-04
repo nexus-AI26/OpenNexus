@@ -15,7 +15,7 @@ from telegram.ext import (
     filters,
 )
 
-from config import Config, SKILLS_DIR, LOGS_DIR
+from config import Config, SKILLS_DIR, LOGS_DIR, augment_system_prompt
 from bot.formatter import format_response, split_message
 from bot.middleware import create_access_checker, create_sanitize_middleware
 from providers import get_provider
@@ -93,7 +93,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     user_contexts.pop(user_id, None)
     if update.message:
         await update.message.reply_text("Conversation cleared.")
@@ -102,7 +102,7 @@ async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     args = context.args or []
 
     if len(args) < 2:
@@ -193,7 +193,7 @@ async def cmd_skill(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     history = user_contexts.get(user_id, [])
 
     if not history:
@@ -218,7 +218,7 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     args = context.args or []
 
     if not args:
@@ -228,9 +228,9 @@ async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     if args[0].lower() == "set" and len(args) > 1:
-        text = update.message.text if update.message else ""  # type: ignore[union-attr]
+        text = update.message.text if update.message else ""
         new_prompt = text.split("/system set ", 1)[-1].strip()
-        user_system_prompts[user_id] = new_prompt
+        user_system_prompts[user_id] = augment_system_prompt(new_prompt)
         if update.message:
             await update.message.reply_text("System prompt updated for this session.")
     else:
@@ -242,7 +242,7 @@ async def cmd_system(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     history = user_contexts.get(user_id, [])
     total_chars = sum(len(m["content"]) for m in history)
     approx_tokens = total_chars // 4
@@ -255,7 +255,7 @@ async def cmd_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_raw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     current = user_raw_mode.get(user_id, False)
     user_raw_mode[user_id] = not current
     state = "ON" if not current else "OFF"
@@ -266,7 +266,7 @@ async def cmd_raw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_websearch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     args = context.args or []
     if not args:
         state = "ON" if user_websearch_enabled.get(user_id, True) else "OFF"
@@ -315,7 +315,7 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check(update, context):
         return
     config = _get_config()
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     if user_id != config.owner_id:
         if update.message:
             await update.message.reply_text("Access denied. Owner only.")
@@ -332,8 +332,7 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _execute_shell_and_reply(update: Update, command: str, bypass_allowlist: bool = False) -> str:
     config = _get_config()
-    user_id = update.effective_user.id  # type: ignore[union-attr]
-
+    user_id = update.effective_user.id 
     if not bypass_allowlist and not is_command_allowed(command, config.allowed_commands):
         if update.message:
             await update.message.reply_text("Command not in allowlist.")
@@ -387,8 +386,7 @@ async def cmd_adduser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not await _check(update, context):
         return
     config = _get_config()
-    user_id = update.effective_user.id  # type: ignore[union-attr]
-
+    user_id = update.effective_user.id 
     if user_id != config.owner_id:
         if update.message:
             await update.message.reply_text("Owner only.")
@@ -419,8 +417,7 @@ async def cmd_removeuser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await _check(update, context):
         return
     config = _get_config()
-    user_id = update.effective_user.id  # type: ignore[union-attr]
-
+    user_id = update.effective_user.id 
     if user_id != config.owner_id:
         if update.message:
             await update.message.reply_text("Owner only.")
@@ -498,7 +495,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = await file.download_as_bytearray()
     text_content = data.decode("utf-8", errors="replace")
 
-    user_id = update.effective_user.id  # type: ignore[union-attr]
+    user_id = update.effective_user.id
     if user_id not in user_contexts:
         user_contexts[user_id] = []
 
@@ -537,15 +534,12 @@ async def _process_message(
 ) -> None:
     assert _skill_manager is not None
     assert _skill_generator is not None
-    user_id = update.effective_user.id  # type: ignore[union-attr]
-
+    user_id = update.effective_user.id 
     if user_id not in user_contexts:
         user_contexts[user_id] = []
 
     if not any(m["content"] == text and m["role"] == "user" for m in user_contexts[user_id][-1:]):
         user_contexts[user_id].append({"role": "user", "content": text})
-
-    skill_injection = _skill_manager.build_skill_injection(text)
 
     base_prompt = _get_system_prompt(user_id)
     system_prompt = (
@@ -554,6 +548,7 @@ async def _process_message(
         "Wait for the system result before continuing. DO NOT hallucinate command outputs."
     )
 
+    skill_injection = _skill_manager.build_skill_injection(text, system_prompt)
     if skill_injection:
         system_prompt += skill_injection
 
@@ -563,7 +558,6 @@ async def _process_message(
 
     max_turns = 5
     for turn in range(max_turns):
-        # Send typing action before starting
         await context.bot.send_chat_action(
             chat_id=update.message.chat_id,
             action=constants.ChatAction.TYPING,
@@ -571,7 +565,7 @@ async def _process_message(
 
         try:
             full_response = ""
-            sent_message = None          # don't send placeholder until first chunk
+            sent_message = None
             last_edit_time = 0.0
             chunk_count = 0
             typing_refresh = 0
@@ -586,7 +580,6 @@ async def _process_message(
                 chunk_count += 1
                 typing_refresh += 1
 
-                # Refresh typing indicator every 25 chunks so it doesn't expire
                 if typing_refresh >= 25:
                     typing_refresh = 0
                     try:
@@ -599,33 +592,28 @@ async def _process_message(
 
                 now = time.time()
 
-                # First chunk: send the initial message immediately
                 if sent_message is None and full_response.strip():
                     try:
-                        sent_message = await update.message.reply_text(
-                            full_response + " ⬜"
-                        )
+                        sent_message = await update.message.reply_text(full_response)
                         last_edit_time = now
                     except Exception:
                         pass
                     continue
 
-                # Subsequent chunks: edit every 0.5s or every 15 chunks
                 should_update = (
                     sent_message is not None and
                     full_response.strip() and
-                    ((now - last_edit_time >= 0.5) or (chunk_count >= 15))
+                    ((now - last_edit_time >= 0.15) or (chunk_count >= 6))
                 )
 
                 if should_update:
                     try:
-                        await sent_message.edit_text(full_response + " ⬜")
+                        await sent_message.edit_text(full_response)
                         last_edit_time = now
                         chunk_count = 0
                     except Exception:
                         pass
 
-            # Streaming done — send final clean message
             if full_response.strip():
                 chunks = split_message(full_response)
                 if sent_message:
@@ -634,7 +622,6 @@ async def _process_message(
                     except Exception:
                         pass
                 else:
-                    # No message was sent yet (very short response)
                     sent_message = await update.message.reply_text(chunks[0])
                 for extra in chunks[1:]:
                     await update.message.reply_text(extra)
@@ -649,7 +636,6 @@ async def _process_message(
                 "content": full_response,
             })
 
-            # Check for <execute> tag
             match = re.search(r'<execute>(.*?)</execute>', full_response, re.DOTALL)
             if match and user_id == _get_config().owner_id:
                 cmd = match.group(1).strip()
@@ -671,7 +657,6 @@ async def _process_message(
                 await update.message.reply_text(error_msg)
             break
 
-    # Record tasks and generate skills after the final turn
     _skill_generator.record_task(text)
     if _skill_generator.should_generate(text):
         skill = await _skill_generator.generate_skill(text, provider, model)
