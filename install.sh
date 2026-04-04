@@ -137,7 +137,7 @@ VENV_PIP="$VENV_DIR/bin/pip"
 
 log_info "Installing dependencies..."
 "$VENV_PIP" install --quiet --upgrade pip
-"$VENV_PIP" install --quiet -r "$INSTALL_DIR/requirements.txt"
+"$VENV_PIP" install --quiet -e "$INSTALL_DIR"
 log_ok "Dependencies installed."
 
 # ── Step 4: Config ────────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ Type=simple
 User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${VENV_PYTHON} ${INSTALL_DIR}/main.py
+ExecStart=${VENV_PYTHON} ${INSTALL_DIR}/main.py bot
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -252,7 +252,7 @@ if $INSTALL_SERVICE; then
     echo -e "     ${CYAN}sudo journalctl -u opennexus -f${RESET}"
 else
     echo -e "  3. Run OpenNexus:"
-    echo -e "     ${CYAN}cd $INSTALL_DIR && $VENV_PYTHON main.py${RESET}"
-    echo -e "     or just: ${CYAN}opennexus${RESET}"
+    echo -e "     ${CYAN}cd $INSTALL_DIR && $VENV_PYTHON main.py bot${RESET}"
+    echo -e "     or just: ${CYAN}opennexus bot${RESET}"
 fi
 echo ""
