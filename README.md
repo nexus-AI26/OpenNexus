@@ -139,4 +139,4 @@ When a task requires system interaction:
 
 ## License
 
-MIT
+`LICENSE`
