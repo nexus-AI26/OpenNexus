@@ -7,14 +7,9 @@ name = "opennexus"
 version = "1.0.0"
 description = "AI assistant for developers and ethical hackers. Telegram-only. Multi-provider."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.11"
-dependencies = [
-    "python-telegram-bot[ext]>=20.0,<22.0",
-    "httpx>=0.27.0,<1.0",
-    "fastapi>=0.100.0",
-    "uvicorn>=0.23.0"
-]
 
-[project.scripts]
-opennexus = "main:main"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bot*", "providers*", "skills*", "security*"]
