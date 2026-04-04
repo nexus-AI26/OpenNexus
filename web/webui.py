@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -11,6 +12,9 @@ from config import Config
 from bot.handlers import user_contexts, user_providers, _execute_shell_and_reply
 
 logger = logging.getLogger("opennexus.web")
+
+BASE_DIR = Path(__file__).parent
+STATIC_DIR = BASE_DIR / "static"
 
 class ChatRequest(BaseModel):
     message: str
@@ -25,11 +29,11 @@ class DummyUpdate:
 
 def create_app(config: Config) -> FastAPI:
     app = FastAPI(title="OpenNexus")
-    app.mount("/static", StaticFiles(directory="web/static"), name="static")
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/")
     def index():
-        return FileResponse("web/static/index.html")
+        return FileResponse(str(STATIC_DIR / "index.html"))
 
     @app.get("/api/info")
     def info():
