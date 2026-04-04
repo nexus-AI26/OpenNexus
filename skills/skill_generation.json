@@ -1,0 +1,14 @@
+{
+  "id": "skill_generation",
+  "name": "Skill Generation",
+  "description": "Creates reusable skills from repeated tasks",
+  "trigger_keywords": [
+    "automate",
+    "repeat",
+    "reuse",
+    "workflow",
+    "make a script",
+    "do this automatically"
+  ],
+  "system_prompt_injection": "When a task is repetitive or can be reused, convert it into a structured reusable skill. Ensure it is general-purpose, concise, and saved for future use. Prefer creating automation logic over giving one-off answers."
+}
